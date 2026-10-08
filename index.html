@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>NetScope Pro</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+
+    <style>
+        body {
+            background-color: #0f172a;
+            color: white;
+            font-family: Arial;
+            text-align: center;
+        }
+
+        input {
+            padding: 10px;
+            width: 300px;
+            border-radius: 5px;
+            border: none;
+        }
+
+        button {
+            padding: 10px 20px;
+            margin-left: 10px;
+            border: none;
+            border-radius: 5px;
+            background-color: #22c55e;
+            color: white;
+            cursor: pointer;
+        }
+
+        table {
+            width: 80%;
+            margin: 20px auto;
+            border-collapse: collapse;
+            background: #1e293b;
+        }
+
+        th, td {
+            border: 1px solid #334155;
+            padding: 10px;
+        }
+
+        th {
+            background: #334155;
+        }
+
+        h3 {
+            margin-top: 20px;
+        }
+
+        .container {
+    width: 90%;
+    margin: auto;
+}
+
+.stats {
+    display: flex;
+    justify-content: space-around;
+    margin: 20px 0;
+}
+
+.card {
+    background: #1e293b;
+    padding: 15px;
+    border-radius: 10px;
+    width: 30%;
+    font-size: 18px;
+}
+
+.controls {
+    margin: 20px 0;
+}
+
+.section {
+    margin: 20px 0;
+}
+
+pre { background: black; color: #00ff00; height: 200px; overflow-y: scroll;
+padding: 10px; text-align: left; } </style> <style>
+#packets {
+    background: black;
+    color: #00ff00;
+    height: 200px;
+    overflow-y: scroll;
+    padding: 10px;
+    text-align: left;
+}
+</style>
+</head>
+
+<body>
+
+<h1>🚀 NetScope Pro Dashboard</h1>
+
+<div class="container">
+
+    <!-- 🔝 STATS -->
+    <div class="stats">
+        <div class="card">📡 Packets: <span id="totalPackets">0</span></div>
+        <div class="card">🚨 Threats: <span id="totalThreats">0</span></div>
+        <div class="card">🌍 Unique IPs: <span id="uniqueIPs">0</span></div>
+    </div>
+
+    <!-- 🔗 INPUT -->
+    <div class="controls">
+        <input type="text" id="url" placeholder="Enter URL">
+        <button onclick="analyze()">Analyze</button>
+        <button onclick="startSniff()">Start</button>
+        <button onclick="stopSniff()">Stop</button>
+    </div>
+
+    <!-- 📊 GRAPH -->
+    <div class="section">
+        <h3>📊 Traffic Graph</h3>
+        <canvas id="trafficChart"></canvas>
+    </div>
+
+    <!-- 📡 PACKETS -->
+    <div class="section">
+        <h3>📡 Live Packets</h3>
+        <pre id="packets"></pre>
+    </div>
+
+    <!-- 🌍 THREATS -->
+    <div class="section">
+        <h3>🚨 Threat Log</h3>
+        <pre id="threatLog"></pre>
+    </div>
+
+    <!-- 🔍 ANALYSIS RESULT -->
+<div class="section">
+    <h3>🔍 URL Analysis</h3>
+    <h2 id="risk"></h2>
+    <div id="resultBox"></div>
+</div>
+
+</div>
+
+</body>
+<script>
+const socket = io("http://localhost:5000");
+
+let interval;
+let ipCount = {};
+let totalPackets = 0;
+let totalThreats = 0;
+let uniqueIPsSet = new Set();
+// 🔥 GRAPH VARIABLES
+let packetCount = 0;
+let labels = [];
+let dataPoints = [];
+
+// 🔥 GRAPH INIT
+const ctx = document.getElementById('trafficChart').getContext('2d');
+
+const trafficChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+        labels: labels,
+        datasets: [{
+            label: '📡 Packets/sec',
+            data: dataPoints,
+            borderWidth: 3,
+            borderColor: "#22c55e",        // neon green line
+            backgroundColor: "rgba(34,197,94,0.2)", // glow effect
+            fill: true,
+            tension: 0.4,                  // smooth curve
+            pointRadius: 4,
+            pointBackgroundColor: "#22c55e"
+        }]
+    },
+    options: {
+        responsive: true,
+        animation: {
+            duration: 800,               // smooth animation
+            easing: 'easeInOutCubic'
+        },
+        plugins: {
+            legend: {
+                labels: {
+                    color: "white",
+                    font: { size: 14 }
+                }
+            }
+        },
+        scales: {
+            x: {
+                ticks: { color: "white" },
+                grid: { color: "#334155" }
+            },
+            y: {
+                beginAtZero: true,
+                ticks: { color: "white" },
+                grid: { color: "#334155" }
+            }
+        }
+    }
+});
+
+// 🔗 ANALYZE
+function analyze() {
+    const url = document.getElementById("url").value;
+
+    if (interval) clearInterval(interval);
+
+    interval = setInterval(() => {
+        socket.emit("analyze", url);
+    }, 2000);
+}
+
+// 📊 RESULT
+socket.on("result", (data) => {
+    let html = "";
+
+    if (data.error) {
+        html = "<h3 style='color:red;'>Request Failed</h3>";
+    } else {
+        html += `
+        <table>
+            <tr><th>Status</th><th>Time</th><th>Risk</th></tr>
+            <tr>
+                <td>${data.status}</td>
+                <td>${data.time}</td>
+                <td>${data.risk}</td>
+            </tr>
+        </table>
+        <h3>Headers</h3><table>
+        `;
+
+        for (let key in data.headers) {
+            html += `<tr><td>${key}</td><td>${data.headers[key]}</td></tr>`;
+        }
+
+        html += "</table>";
+    }
+
+    document.getElementById("resultBox").innerHTML = html;
+
+    let risk = document.getElementById("risk");
+    risk.innerText = "Risk: " + data.risk;
+
+    if (data.risk === "Low") risk.style.color = "green";
+    else if (data.risk === "Medium") risk.style.color = "orange";
+    else risk.style.color = "red";
+});
+
+// 📡 PACKET STREAM
+socket.on("packet", async (data) => {
+    const box = document.getElementById("packets");
+    const threatBox = document.getElementById("threatLog");
+
+    box.innerText += data;
+    box.scrollTop = box.scrollHeight;
+
+    packetCount++;
+    totalPackets++;
+
+    document.getElementById("totalPackets").innerText = totalPackets;
+
+    const match = data.match(/-> ([0-9.]+)/);
+
+    if (match) {
+        const ip = match[1];
+
+        // skip local
+        if (ip.startsWith("10.") || ip.startsWith("192.") || ip.startsWith("172.")) {
+            return;
+        }
+
+        uniqueIPsSet.add(ip);
+        document.getElementById("uniqueIPs").innerText = uniqueIPsSet.size;
+
+        ipCount[ip] = (ipCount[ip] || 0) + 1;
+
+        let threat = "";
+
+        if (ipCount[ip] > 10) {
+            threat = "🔴 HIGH TRAFFIC";
+        } else if (ipCount[ip] > 5) {
+            threat = "🟡 Suspicious";
+        }
+
+        const location = await getLocation(ip);
+
+        const log = `🌍 ${ip} → ${location} ${threat}\n`;
+
+        if (threat !== "") {
+            totalThreats++;
+            document.getElementById("totalThreats").innerText = totalThreats;
+
+            threatBox.innerText += log;
+            threatBox.scrollTop = threatBox.scrollHeight;
+        }
+
+        box.innerText += log;
+    }
+});
+
+// ▶️ START
+function startSniff() {
+    document.getElementById("packets").innerText = "";
+    socket.emit("start-sniff");
+}
+
+// ⛔ STOP
+function stopSniff() {
+    socket.emit("stop-sniff");
+}
+
+// 📊 GRAPH UPDATE
+setInterval(() => {
+
+    const time = new Date().toLocaleTimeString();
+
+    labels.push(time);
+    dataPoints.push(packetCount + Math.random()*2);
+
+    if (labels.length > 10) {
+        labels.shift();
+        dataPoints.shift();
+    }
+
+    trafficChart.update();
+
+    packetCount = 0;
+
+}, 2000);
+setInterval(() => {
+    ipCount = {}; // reset every 5 sec
+}, 5000);
+
+async function getLocation(ip) {
+    try {
+        const res = await fetch(`http://ip-api.com/json/${ip}`);
+        const data = await res.json();
+
+        return `${data.country} (${data.city})`;
+    } catch {
+        return "Unknown";
+    }
+}
+
+</script>
+
+</body>
+</html>
